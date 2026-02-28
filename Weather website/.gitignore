@@ -1,0 +1,12 @@
+# Reference image (not needed in repo)
+*.png
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*.swo
+
+# Claude IDE files
+.claude/settings.local.json

@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>BDA Weather – Bermuda</title>
+  <meta name="description" content="Real-time weather, ocean tides, and storm tracking for Bermuda."/>
+
+  <!-- Inter font -->
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+
+  <!-- Site styles -->
+  <link rel="stylesheet" href="css/styles.css"/>
+</head>
+<body>
+
+<!-- ─── Loading overlay ──────────────────────────────────────────────────── -->
+<div id="loading-overlay">
+  <div class="loading-logo">BDA Weather</div>
+  <div class="loading-spinner"></div>
+  <div class="loading-msg" id="loading-msg">Fetching live conditions…</div>
+  <div class="loading-verse" id="loading-verse"></div>
+</div>
+
+<!-- ─── Navigation ───────────────────────────────────────────────────────── -->
+<nav id="site-nav" role="navigation" aria-label="Main navigation">
+  <div class="container nav-bar">
+    <a href="#" class="nav-logo">
+      <div class="nav-logo-dot"></div>
+      BDA Weather
+    </a>
+    <div class="nav-meta">
+      <span class="nav-updated" id="nav-updated">Updating…</span>
+      <div class="unit-toggle" role="group" aria-label="Temperature unit">
+        <button class="unit-btn" id="btn-c" onclick="window.App.setUnit('C')" aria-pressed="false">°C</button>
+        <button class="unit-btn active" id="btn-f" onclick="window.App.setUnit('F')" aria-pressed="true">°F</button>
+      </div>
+      <button class="btn-refresh" id="btn-refresh" onclick="window.App.refresh()" aria-label="Refresh data">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M23 4v6h-6M1 20v-6h6"/>
+          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+        </svg>
+        Refresh
+      </button>
+    </div>
+  </div>
+  <!-- Section quick-nav -->
+  <div class="section-nav-wrap">
+    <div class="section-nav" id="section-nav" role="tablist" aria-label="Page sections">
+      <a class="snav-btn active" href="#hero"   role="tab">Overview</a>
+      <a class="snav-btn"        href="#ocean"  role="tab">Ocean &amp; Tides</a>
+      <a class="snav-btn"        href="#hourly" role="tab">24-Hour Forecast</a>
+      <a class="snav-btn"        href="#daily"  role="tab">7-Day Forecast</a>
+      <a class="snav-btn"        href="#storms" role="tab">Atlantic Storms</a>
+      <a class="snav-btn"        href="#wind"   role="tab">Wind Detail</a>
+    </div>
+  </div>
+</nav>
+
+<!-- ─── Hero ─────────────────────────────────────────────────────────────── -->
+<section id="hero" class="grad-clear" aria-labelledby="hero-heading">
+  <div class="container">
+    <div class="hero-left">
+      <p class="hero-location">📍 Hamilton, Bermuda</p>
+      <div class="hero-temp" id="hero-temp" aria-live="polite">
+        <span class="skeleton" style="display:inline-block;width:8rem;height:6rem;border-radius:.5rem">&nbsp;</span>
+      </div>
+      <div class="hero-condition" id="hero-condition">
+        <span class="icon">⛅</span>
+        <span class="label">Loading…</span>
+      </div>
+      <div class="hero-meta">
+        <div class="hero-meta-item">
+          <span>Feels like</span>
+          <span id="hero-feels">—</span>
+        </div>
+        <div class="hero-meta-item">
+          <span>Sea temp</span>
+          <span id="hero-sea">—</span>
+        </div>
+        <div class="hero-meta-item">
+          <span>Wind</span>
+          <span id="hero-wind">—</span>
+        </div>
+        <div class="hero-meta-item">
+          <span>Humidity</span>
+          <span id="hero-humidity">—</span>
+        </div>
+      </div>
+    </div>
+    <div class="hero-right">
+      <div class="hero-datetime">
+        <div class="date" id="hero-date">—</div>
+        <div class="time" id="hero-time">—</div>
+      </div>
+      <div class="hero-sun">
+        <div class="hero-sun-item">
+          <span>🌅</span>
+          <span id="hero-sunrise">—</span>
+        </div>
+        <div class="hero-sun-item">
+          <span>🌇</span>
+          <span id="hero-sunset">—</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ─── Quick Stats ───────────────────────────────────────────────────────── -->
+<section id="quick-stats" aria-label="Current conditions">
+  <div class="container">
+    <div class="stats-grid">
+
+      <!-- Wind -->
+      <div class="card animate-in" id="card-wind" style="animation-delay:.05s">
+        <div class="card-label"><span class="card-icon">💨</span> Wind</div>
+        <div class="wind-card-body">
+          <div class="compass-ring" aria-hidden="true">
+            <div class="compass-needle" id="compass-needle"></div>
+            <div class="compass-center"></div>
+          </div>
+          <div>
+            <div class="card-value" id="stat-wind">—</div>
+            <div class="card-sub" id="stat-wind-dir">—</div>
+            <div class="card-sub" id="stat-gust">Gusts: —</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Humidity -->
+      <div class="card animate-in" id="card-humidity" style="animation-delay:.1s">
+        <div class="card-label"><span class="card-icon">💧</span> Humidity</div>
+        <div class="card-value" id="stat-humidity">—</div>
+        <div class="card-sub" id="stat-dewpoint">Dew point: —</div>
+      </div>
+
+      <!-- Pressure -->
+      <div class="card animate-in" id="card-pressure" style="animation-delay:.15s">
+        <div class="card-label"><span class="card-icon">🌡️</span> Pressure</div>
+        <div class="card-value" id="stat-pressure">—</div>
+        <div class="card-sub" id="stat-vis">Visibility: —</div>
+      </div>
+
+      <!-- UV -->
+      <div class="card animate-in" id="card-uv" style="animation-delay:.2s">
+        <div class="card-label"><span class="card-icon">☀️</span> UV Index</div>
+        <div class="card-value" id="stat-uv">—</div>
+        <div class="uv-bar" aria-hidden="true">
+          <div class="uv-indicator" id="uv-indicator" style="left:0%"></div>
+        </div>
+        <div class="card-sub" id="stat-uv-label" style="margin-top:.5rem">—</div>
+      </div>
+
+      <!-- Cloud cover -->
+      <div class="card animate-in" id="card-cloud" style="animation-delay:.25s">
+        <div class="card-label"><span class="card-icon">☁️</span> Cloud Cover</div>
+        <div class="card-value" id="stat-cloud">—</div>
+        <div class="card-sub" id="stat-precip">Precipitation: —</div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ─── Ocean & Tides ─────────────────────────────────────────────────────── -->
+<section id="ocean" class="section" aria-labelledby="ocean-heading">
+  <div class="container">
+    <h2 class="section-title" id="ocean-heading"><span class="title-icon">🌊</span> Ocean &amp; Tides</h2>
+
+    <!-- Tide times row -->
+    <div class="tide-times" id="tide-times" aria-label="Tide schedule"></div>
+
+    <div class="ocean-grid">
+      <!-- Tide chart -->
+      <div class="chart-card">
+        <h4>📈 Tide Height – 48 hrs (MLLW, m)</h4>
+        <div class="chart-wrap">
+          <canvas id="chart-tide" role="img" aria-label="Tide height chart"></canvas>
+        </div>
+      </div>
+
+      <!-- Ocean stats -->
+      <div class="ocean-cards" id="ocean-cards">
+        <div class="card">
+          <div class="card-label"><span class="card-icon">🌊</span> Wave Height</div>
+          <div class="card-value" id="stat-wave">—</div>
+          <div class="card-sub" id="stat-wave-period">Period: —</div>
+        </div>
+        <div class="card">
+          <div class="card-label"><span class="card-icon">〰️</span> Swell</div>
+          <div class="card-value" id="stat-swell">—</div>
+          <div class="card-sub" id="stat-swell-dir">Direction: —</div>
+        </div>
+        <div class="card">
+          <div class="card-label"><span class="card-icon">🌡️</span> Sea Temp</div>
+          <div class="card-value" id="stat-sst">—</div>
+          <div class="card-sub">Surface</div>
+        </div>
+        <div class="card">
+          <div class="card-label"><span class="card-icon">🔄</span> Ocean Current</div>
+          <div class="card-value" id="stat-current">—</div>
+          <div class="card-sub" id="stat-current-dir">Direction: —</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ─── 24-Hour Forecast ──────────────────────────────────────────────────── -->
+<section id="hourly" class="section section-alt" aria-labelledby="hourly-heading">
+  <div class="container">
+    <h2 class="section-title" id="hourly-heading"><span class="title-icon">🕐</span> 24-Hour Forecast</h2>
+    <div class="hourly-scroll" id="hourly-scroll" role="list" aria-label="Hourly forecast"></div>
+    <div class="chart-card">
+      <h4>🌡️ Temperature &amp; Precipitation – 24 hrs</h4>
+      <div class="chart-wrap" style="height:220px">
+        <canvas id="chart-hourly" role="img" aria-label="Hourly temperature and precipitation chart"></canvas>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ─── 7-Day Forecast ────────────────────────────────────────────────────── -->
+<section id="daily" class="section" aria-labelledby="daily-heading">
+  <div class="container">
+    <h2 class="section-title" id="daily-heading"><span class="title-icon">📅</span> 7-Day Forecast</h2>
+    <div class="daily-grid" id="daily-grid" role="list" aria-label="7-day forecast"></div>
+  </div>
+</section>
+
+<!-- ─── Storm Tracker ─────────────────────────────────────────────────────── -->
+<section id="storms" aria-labelledby="storms-heading">
+  <div class="container">
+    <h2 class="section-title" id="storms-heading">
+      <span class="title-icon">🌀</span> Atlantic Storm Tracker
+    </h2>
+    <div class="storms-grid">
+      <div id="storm-map-wrap">
+        <div id="storm-map" aria-label="Atlantic storm tracking map"></div>
+      </div>
+      <div class="storm-sidebar">
+        <div class="storm-status-card">
+          <h4>Active Systems</h4>
+          <div id="storm-list"></div>
+        </div>
+        <div class="buoy-card" id="buoy-section">
+          <h4>🛟 NDBC Buoy 41049 – South Bermuda</h4>
+          <div class="buoy-grid" id="buoy-grid">
+            <div class="buoy-stat"><div class="bs-label">Wave Ht</div><div class="bs-val" id="buoy-wave">—</div></div>
+            <div class="buoy-stat"><div class="bs-label">Dom Period</div><div class="bs-val" id="buoy-period">—</div></div>
+            <div class="buoy-stat"><div class="bs-label">Water Temp</div><div class="bs-val" id="buoy-temp">—</div></div>
+            <div class="buoy-stat"><div class="bs-label">Wind</div><div class="bs-val" id="buoy-wind">—</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ─── Wind Detail ───────────────────────────────────────────────────────── -->
+<section id="wind" class="section" aria-labelledby="wind-heading">
+  <div class="container">
+    <h2 class="section-title" id="wind-heading"><span class="title-icon">🌬️</span> Wind Detail</h2>
+    <div class="wind-detail-grid">
+      <div class="wind-rose-wrap">
+        <div class="wind-rose" aria-hidden="true">
+          <div class="wind-rose-labels">
+            <span class="wl-n">N</span>
+            <span class="wl-s">S</span>
+            <span class="wl-e">E</span>
+            <span class="wl-w">W</span>
+          </div>
+          <div class="wind-arrow" id="wind-arrow"></div>
+          <div class="wind-rose-center"></div>
+        </div>
+        <div class="wind-beaufort" id="wind-beaufort">—</div>
+      </div>
+      <div class="chart-card" style="flex:1">
+        <h4>💨 Wind Speed &amp; Gusts – 24 hrs (km/h)</h4>
+        <div class="chart-wrap" style="height:200px">
+          <canvas id="chart-wind" role="img" aria-label="Wind speed chart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ─── Footer ────────────────────────────────────────────────────────────── -->
+<footer role="contentinfo">
+  <div class="container">
+    <div class="footer-top">
+      <div>
+        <div class="footer-brand">
+          BDA Weather
+          <span>Real-time weather for Bermuda</span>
+        </div>
+      </div>
+      <div class="footer-sources">
+        <h4>Data Sources</h4>
+        <ul>
+          <li><a href="https://open-meteo.com" target="_blank" rel="noopener">Open-Meteo Weather API</a></li>
+          <li><a href="https://open-meteo.com/en/docs/marine-weather-api" target="_blank" rel="noopener">Open-Meteo Marine API</a></li>
+          <li><a href="https://tidesandcurrents.noaa.gov/stationhome.html?id=2695540" target="_blank" rel="noopener">NOAA CO-OPS Tides (Stn 2695540)</a></li>
+          <li><a href="https://www.nhc.noaa.gov" target="_blank" rel="noopener">NOAA NHC – Atlantic Storms</a></li>
+          <li><a href="https://www.ndbc.noaa.gov/station_page.php?station=41049" target="_blank" rel="noopener">NOAA NDBC Buoy 41049</a></li>
+          <li><a href="https://weather.bm" target="_blank" rel="noopener">weather.bm (Bermuda Met)</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <span>Data auto-refreshes every 10 minutes. All times in Bermuda Standard Time (AST, UTC−4).</span>
+      <span id="footer-updated">Last updated: —</span>
+    </div>
+  </div>
+</footer>
+
+<!-- ─── Scripts ───────────────────────────────────────────────────────────── -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="js/config.js"></script>
+<script src="js/weatherCodes.js"></script>
+<script src="js/api.js"></script>
+<script src="js/charts.js"></script>
+<script src="js/map.js"></script>
+<script src="js/app.js"></script>
+
+</body>
+</html>
