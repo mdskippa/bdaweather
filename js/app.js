@@ -70,6 +70,7 @@ window.App = (() => {
   function render(data) {
     if (!data) return;
     renderHero(data);
+    renderTankRain(data);
     renderQuickStats(data);
     renderOcean(data);
     renderHourly(data);
@@ -112,6 +113,29 @@ window.App = (() => {
       document.getElementById('hero-sunrise').textContent = fmtTime(sr);
       document.getElementById('hero-sunset').textContent  = fmtTime(ss);
     }
+  }
+
+  // ─── Tank Rain ─────────────────────────────────────────────────────────────
+  const TANK_TIERS = [
+    { min: 75,  icon: '⛈️',    label: 'Big Tank Refill',  desc: "Dat's real flat-out tank rain — tanks up to de' brim." },
+    { min: 50,  icon: '🌧️🌧️', label: 'Proper Tank Rain', desc: "That's proper rain — tank fillin' good." },
+    { min: 20,  icon: '🌦️',    label: 'Good Tank Rain',   desc: 'Pretty good rain — tank goin\u2019 up proper.' },
+    { min: 10,  icon: '💧',     label: 'Minor Tank Boost', desc: "Some decent rain — tank'll creep up." },
+    { min: 1,   icon: '🌧️',    label: 'Light Shower',     desc: "A li'l sprinkle — not much tank goin' up." },
+    { min: 0,   icon: '☀️',     label: 'No Rain',          desc: "Tanks restin' today — no rain comin'." },
+  ];
+
+  function renderTankRain(data) {
+    const w = data.weather;
+    if (!w || !w.daily) return;
+    const mm = w.daily.precipitation_sum[0] ?? 0;
+    const inches = (mm / 25.4).toFixed(2);
+    const tier = TANK_TIERS.find(t => mm >= t.min) || TANK_TIERS[TANK_TIERS.length - 1];
+
+    document.getElementById('hero-tank').querySelector('.tank-icon').textContent   = tier.icon;
+    document.getElementById('hero-tank').querySelector('.tank-label').textContent  = tier.label;
+    document.getElementById('hero-tank').querySelector('.tank-desc').textContent   = tier.desc;
+    document.getElementById('hero-tank').querySelector('.tank-amount').textContent = `${mm} mm / ${inches} in`;
   }
 
   // ─── Quick Stats ────────────────────────────────────────────────────────────
