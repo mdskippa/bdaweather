@@ -198,8 +198,10 @@ window.App = (() => {
       tideTags.innerHTML = future.map(t => {
         const d = new Date(t.t);
         const isH = t.type === 'H';
+        const dateStr = d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', timeZone: 'America/Halifax' });
         return `<div class="tide-tag ${isH ? 'high' : 'low'}">
           <span class="tag-type">${isH ? '▲ HIGH' : '▽ LOW'}</span>
+          <span class="tag-date">${dateStr}</span>
           <span class="tag-time">${fmtTime(d)}</span>
           <span class="tag-ht">${parseFloat(t.v).toFixed(2)} m</span>
         </div>`;

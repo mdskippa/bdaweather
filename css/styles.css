@@ -275,6 +275,7 @@ img { display: block; max-width: 100%; }
 .tide-tag .tag-type { font-size: var(--text-xs); text-transform: uppercase; letter-spacing: .08em; font-weight: 600; }
 .tide-tag.high .tag-type { color: var(--color-teal-600); }
 .tide-tag.low  .tag-type { color: var(--color-neutral-500); }
+.tide-tag .tag-date { font-size: var(--text-xs); color: var(--color-neutral-500); margin-top: .1rem; }
 .tide-tag .tag-time { font-size: var(--text-sm); font-weight: 700; margin-top: .1rem; }
 .tide-tag .tag-ht   { font-size: var(--text-xs); color: var(--color-neutral-500); margin-top: .05rem; }
 
