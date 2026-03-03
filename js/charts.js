@@ -126,12 +126,84 @@ const nowLinePlugin = {
   },
 };
 
+// ─── Tide-specific "Now" line plugin (uses raw timestamps) ────────────────────
+const tideNowLinePlugin = {
+  id: 'tideNowLine',
+  afterDraw(chart) {
+    const times = chart.data._rawTimes;
+    const xScale = chart.scales.x;
+    if (!times || !times.length || !xScale) return;
+
+    const now = Date.now();
+    // Find the two surrounding data points
+    let idx = times.findIndex(t => t >= now);
+    if (idx === -1) return; // now is after all data
+    if (idx === 0 && times[0] > now) return; // now is before all data
+
+    let pixelX;
+    if (idx === 0) {
+      pixelX = xScale.getPixelForValue(0);
+    } else {
+      const prev = times[idx - 1];
+      const next = times[idx];
+      const frac = (now - prev) / (next - prev);
+      pixelX = xScale.getPixelForValue(idx - 1) + frac * (xScale.getPixelForValue(idx) - xScale.getPixelForValue(idx - 1));
+    }
+
+    const { ctx: c, chartArea: { top, bottom } } = chart;
+    c.save();
+    c.beginPath();
+    c.setLineDash([4, 3]);
+    c.lineWidth = 1.5;
+    c.strokeStyle = CHART_COLORS.red500;
+    c.moveTo(pixelX, top);
+    c.lineTo(pixelX, bottom);
+    c.stroke();
+    c.setLineDash([]);
+    c.font = 'bold 10px Inter, sans-serif';
+    c.fillStyle = CHART_COLORS.red500;
+    c.textAlign = 'center';
+    c.fillText('Now', pixelX, top - 4);
+    c.restore();
+  },
+};
+
+// ─── Midnight divider plugin (draws in x-axis label area only) ────────────────
+const midnightDividerPlugin = {
+  id: 'midnightDivider',
+  afterDraw(chart) {
+    const times = chart.data._rawTimes;
+    const xScale = chart.scales.x;
+    if (!times || !times.length || !xScale) return;
+
+    const { ctx: c, chartArea: { bottom } } = chart;
+    c.save();
+    c.strokeStyle = '#a3a3a3';
+    c.lineWidth = 1;
+    c.setLineDash([]);
+
+    times.forEach((t, i) => {
+      const d = new Date(t);
+      if (d.getHours() === 0 && d.getMinutes() === 0 && i > 0) {
+        const px = xScale.getPixelForValue(i);
+        c.beginPath();
+        c.moveTo(px, bottom);
+        c.lineTo(px, bottom + 30);
+        c.stroke();
+      }
+    });
+
+    c.restore();
+  },
+};
+
 // ─── Tide Chart ───────────────────────────────────────────────────────────────
 function renderTideChart(hourlyPredictions, hiLo) {
   destroyChart('tide');
   const ctx = document.getElementById('chart-tide');
   if (!ctx || !hourlyPredictions.length) return;
 
+  const rawTimes = hourlyPredictions.map(p => new Date(p.t).getTime());
   const labels = hourlyPredictions.map(p => {
     const d = new Date(p.t);
     return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
@@ -144,10 +216,14 @@ function renderTideChart(hourlyPredictions, hiLo) {
   const hiLoRadii   = new Array(values.length).fill(0);
 
   hiLo.forEach(t => {
-    const d   = new Date(t.t);
-    const lbl = `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
-    const idx = labels.indexOf(lbl);
-    if (idx !== -1) {
+    const ts = new Date(t.t).getTime();
+    // Find closest raw timestamp match (handles duplicate HH:MM across days)
+    let idx = -1, bestDiff = Infinity;
+    rawTimes.forEach((rt, i) => {
+      const diff = Math.abs(rt - ts);
+      if (diff < bestDiff) { bestDiff = diff; idx = i; }
+    });
+    if (idx !== -1 && bestDiff < 3600000) { // within 1 hour
       hiLoOverlay[idx] = values[idx];
       hiLoColors[idx]  = t.type === 'H' ? CHART_COLORS.teal500 : '#94a3b8';
       hiLoRadii[idx]   = 5;
@@ -156,8 +232,10 @@ function renderTideChart(hourlyPredictions, hiLo) {
 
   CHART_REGISTRY['tide'] = new Chart(ctx, {
     type: 'line',
+    plugins: [tideNowLinePlugin, midnightDividerPlugin],
     data: {
       labels,
+      _rawTimes: rawTimes,
       datasets: [
         {
           label: 'Tide (m)',
@@ -215,7 +293,23 @@ function renderTideChart(hourlyPredictions, hiLo) {
       scales: {
         x: {
           ...CHART_DEFAULTS.scales.x,
-          ticks: { ...CHART_DEFAULTS.scales.x.ticks, maxTicksLimit: 12, maxRotation: 0 },
+          ticks: {
+            ...CHART_DEFAULTS.scales.x.ticks,
+            maxTicksLimit: 12,
+            maxRotation: 0,
+            callback: function(value) {
+              const time = labels[value];
+              const d = new Date(rawTimes[value]);
+              const dateStr = d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', timeZone: 'America/Halifax' });
+              // Show date centered under each day at 12:00 only
+              const hour = d.getHours();
+              const min = d.getMinutes();
+              if (hour === 12 && min === 0) {
+                return [time, dateStr];
+              }
+              return time;
+            },
+          },
         },
         y: {
           ...CHART_DEFAULTS.scales.y,
