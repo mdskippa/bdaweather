@@ -126,67 +126,79 @@ const nowLinePlugin = {
   },
 };
 
-// ─── Tide Chart ───────────────────────────────────────────────────────────────
+// ─── Tide Chart (48 hours) ────────────────────────────────────────────────────
 function renderTideChart(hourlyPredictions, hiLo) {
   destroyChart('tide');
-  const ctx = document.getElementById('chart-tide');
-  if (!ctx || !hourlyPredictions.length) return;
+  var canvas = document.getElementById('chart-tide');
+  console.log('[TideChart] called, predictions:', hourlyPredictions.length, 'hiLo:', hiLo.length);
+  if (!canvas || !hourlyPredictions.length) {
+    console.warn('[TideChart] no canvas or no data, aborting');
+    return;
+  }
 
-  const labels = hourlyPredictions.map(p => {
-    const d = new Date(p.t);
-    return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
-  });
-  const values = hourlyPredictions.map(p => parseFloat(p.v));
+  // Limit to 48 hours
+  var data48 = hourlyPredictions.slice(0, 48);
+  var timeLabels = [];
+  var heights = [];
+  for (var i = 0; i < data48.length; i++) {
+    var dt = new Date(data48[i].t);
+    var hh = String(dt.getHours()).padStart(2, '0');
+    var mm = String(dt.getMinutes()).padStart(2, '0');
+    timeLabels.push(hh + ':' + mm);
+    heights.push(parseFloat(data48[i].v));
+  }
 
-  // Build hi/lo marker overlay dataset – same x positions, null elsewhere
-  const hiLoOverlay = new Array(values.length).fill(null);
-  const hiLoColors  = new Array(values.length).fill('transparent');
-  const hiLoRadii   = new Array(values.length).fill(0);
-
-  hiLo.forEach(t => {
-    const d   = new Date(t.t);
-    const lbl = `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
-    const idx = labels.indexOf(lbl);
-    if (idx !== -1) {
-      hiLoOverlay[idx] = values[idx];
-      hiLoColors[idx]  = t.type === 'H' ? CHART_COLORS.teal500 : '#94a3b8';
-      hiLoRadii[idx]   = 5;
+  // Hi/Lo marker overlay
+  var overlay = new Array(heights.length).fill(null);
+  var colors = new Array(heights.length).fill('transparent');
+  var radii = new Array(heights.length).fill(0);
+  for (var j = 0; j < hiLo.length; j++) {
+    var hd = new Date(hiLo[j].t);
+    var hlbl = String(hd.getHours()).padStart(2, '0') + ':' + String(hd.getMinutes()).padStart(2, '0');
+    var k = timeLabels.indexOf(hlbl);
+    if (k !== -1) {
+      overlay[k] = heights[k];
+      colors[k] = hiLo[j].type === 'H' ? '#14b8a6' : '#94a3b8';
+      radii[k] = 5;
     }
-  });
+  }
 
-  CHART_REGISTRY['tide'] = new Chart(ctx, {
+  console.log('[TideChart] rendering', timeLabels.length, 'points');
+
+  CHART_REGISTRY['tide'] = new Chart(canvas, {
     type: 'line',
     data: {
-      labels,
+      labels: timeLabels,
       datasets: [
         {
           label: 'Tide (m)',
-          data: values,
-          borderColor: CHART_COLORS.teal500,
+          data: heights,
+          borderColor: '#14b8a6',
           borderWidth: 2,
           pointRadius: 0,
           pointHoverRadius: 4,
           fill: true,
-          backgroundColor: (ctx2) => {
-            const gradient = ctx2.chart.ctx.createLinearGradient(0, 0, 0, ctx2.chart.height);
-            gradient.addColorStop(0, 'rgba(20,184,166,.25)');
-            gradient.addColorStop(1, 'rgba(20,184,166,.02)');
-            return gradient;
+          backgroundColor: function(context) {
+            var chart = context.chart;
+            var g = chart.ctx.createLinearGradient(0, 0, 0, chart.height);
+            g.addColorStop(0, 'rgba(20,184,166,.25)');
+            g.addColorStop(1, 'rgba(20,184,166,.02)');
+            return g;
           },
-          tension: 0.4,
+          tension: 0.4
         },
         {
           label: 'Hi/Lo',
-          data: hiLoOverlay,
+          data: overlay,
           borderColor: 'transparent',
-          backgroundColor: hiLoColors,
-          pointBackgroundColor: hiLoColors,
-          pointRadius: hiLoRadii,
+          backgroundColor: colors,
+          pointBackgroundColor: colors,
+          pointRadius: radii,
           pointHoverRadius: 7,
           showLine: false,
-          tension: 0,
-        },
-      ],
+          tension: 0
+        }
+      ]
     },
     options: {
       responsive: true,
@@ -195,35 +207,64 @@ function renderTideChart(hourlyPredictions, hiLo) {
       plugins: {
         legend: { display: false },
         tooltip: {
-          ...CHART_DEFAULTS.plugins.tooltip,
+          backgroundColor: '#1a1a1a',
+          titleColor: '#e5e5e5',
+          bodyColor: '#a3a3a3',
+          borderColor: '#333',
+          borderWidth: 1,
+          padding: 10,
+          cornerRadius: 8,
           callbacks: {
-            label: ctx2 => {
+            label: function(ctx2) {
               if (ctx2.dataset.label === 'Hi/Lo' && ctx2.parsed.y !== null) {
-                const hiloEntry = hiLo.find(t => {
-                  const d = new Date(t.t);
-                  const lbl = `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
-                  return lbl === ctx2.label;
+                var entry = hiLo.find(function(t) {
+                  var d2 = new Date(t.t);
+                  var l = String(d2.getHours()).padStart(2, '0') + ':' + String(d2.getMinutes()).padStart(2, '0');
+                  return l === ctx2.label;
                 });
-                return hiloEntry ? ` ${hiloEntry.type === 'H' ? '▲ HIGH' : '▽ LOW'}: ${ctx2.parsed.y.toFixed(2)} m` : null;
+                if (entry) return (entry.type === 'H' ? ' \u25B2 HIGH: ' : ' \u25BD LOW: ') + ctx2.parsed.y.toFixed(2) + ' m';
+                return null;
               }
-              return ctx2.dataset.label === 'Tide (m)' ? ` ${ctx2.parsed.y.toFixed(2)} m` : null;
+              if (ctx2.dataset.label === 'Tide (m)') return ' ' + ctx2.parsed.y.toFixed(2) + ' m';
+              return null;
             },
-            filter: ctx2 => ctx2.parsed.y !== null,
-          },
-        },
+            filter: function(ctx2) { return ctx2.parsed.y !== null; }
+          }
+        }
       },
       scales: {
         x: {
-          ...CHART_DEFAULTS.scales.x,
-          ticks: { ...CHART_DEFAULTS.scales.x.ticks, maxTicksLimit: 12, maxRotation: 0 },
+          grid: { color: '#e5e5e5', drawBorder: false },
+          ticks: {
+            color: '#737373',
+            font: { size: 11, family: 'Inter' },
+            maxTicksLimit: 12,
+            maxRotation: 0,
+            callback: function(value) {
+              if (value >= data48.length) return '';
+              var d = new Date(data48[value].t);
+              var time = timeLabels[value];
+              var h = d.getHours();
+              var m = d.getMinutes();
+              if (h === 12 && m === 0) {
+                return [time, d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })];
+              }
+              if (h === 0 && m === 0) {
+                return [time, '|'];
+              }
+              return time;
+            }
+          }
         },
         y: {
-          ...CHART_DEFAULTS.scales.y,
-          title: { display: true, text: 'Height (m)', color: '#a3a3a3', font: { size: 10 } },
-        },
-      },
-    },
+          grid: { color: '#e5e5e5', drawBorder: false },
+          ticks: { color: '#737373', font: { size: 11, family: 'Inter' } },
+          title: { display: true, text: 'Height (m)', color: '#a3a3a3', font: { size: 10 } }
+        }
+      }
+    }
   });
+  console.log('[TideChart] chart created successfully');
 }
 
 // ─── Hourly Temperature + Precipitation Chart ────────────────────────────────
