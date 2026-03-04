@@ -202,25 +202,33 @@ function renderTideChart(hourlyPredictions, hiLo) {
   const ctx = document.getElementById('chart-tide');
   if (!ctx || !hourlyPredictions.length) return;
 
+<<<<<<< HEAD
   // Store raw timestamps for plugins
   _tideRawTimes = hourlyPredictions.map(p => new Date(p.t).getTime());
 
+=======
+  _tideRawTimes = hourlyPredictions.map(p => new Date(p.t).getTime());
+  const rawTimes = _tideRawTimes;
+>>>>>>> b5f5328de1dcf901cf7ea8179665ae9432a769f0
   const labels = hourlyPredictions.map(p => {
     const d = new Date(p.t);
     return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
   });
   const values = hourlyPredictions.map(p => parseFloat(p.v));
 
-  // Build hi/lo marker overlay dataset – same x positions, null elsewhere
+  // Build hi/lo marker overlay dataset – match by closest timestamp
   const hiLoOverlay = new Array(values.length).fill(null);
   const hiLoColors  = new Array(values.length).fill('transparent');
   const hiLoRadii   = new Array(values.length).fill(0);
 
   hiLo.forEach(t => {
-    const d   = new Date(t.t);
-    const lbl = `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
-    const idx = labels.indexOf(lbl);
-    if (idx !== -1) {
+    const ts = new Date(t.t).getTime();
+    let idx = -1, bestDiff = Infinity;
+    rawTimes.forEach((rt, i) => {
+      const diff = Math.abs(rt - ts);
+      if (diff < bestDiff) { bestDiff = diff; idx = i; }
+    });
+    if (idx !== -1 && bestDiff < 3600000) {
       hiLoOverlay[idx] = values[idx];
       hiLoColors[idx]  = t.type === 'H' ? CHART_COLORS.teal500 : '#94a3b8';
       hiLoRadii[idx]   = 5;
@@ -294,11 +302,22 @@ function renderTideChart(hourlyPredictions, hiLo) {
             maxTicksLimit: 12,
             maxRotation: 0,
             callback: function(value) {
+<<<<<<< HEAD
               if (value >= labels.length || value >= _tideRawTimes.length) return '';
               var time = labels[value];
               var d = new Date(_tideRawTimes[value]);
               if (d.getHours() === 12 && d.getMinutes() === 0) {
                 return [time, d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })];
+=======
+              if (value >= labels.length) return '';
+              const time = labels[value];
+              const d = new Date(rawTimes[value]);
+              const hour = d.getHours();
+              const min = d.getMinutes();
+              if (hour === 12 && min === 0) {
+                const dateStr = d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', timeZone: 'America/Halifax' });
+                return [time, dateStr];
+>>>>>>> b5f5328de1dcf901cf7ea8179665ae9432a769f0
               }
               return time;
             },
