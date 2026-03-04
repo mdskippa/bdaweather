@@ -54,16 +54,156 @@ function mergeDeep(target, source) {
 
 // Registry so we can destroy/recreate on refresh
 const CHART_REGISTRY = {};
+let _tideRawTimes = [];
 
 function destroyChart(id) {
   if (CHART_REGISTRY[id]) { CHART_REGISTRY[id].destroy(); delete CHART_REGISTRY[id]; }
 }
+
+// ─── "Now" vertical line plugin ───────────────────────────────────────────────
+const nowLinePlugin = {
+  id: 'nowLine',
+  afterDraw(chart) {
+    const xScale = chart.scales.x;
+    if (!xScale) return;
+
+    // Current time in Atlantic timezone (HH:MM)
+    const now = new Date();
+    const nowLabel = now.toLocaleTimeString('en-GB', {
+      hour: '2-digit', minute: '2-digit', timeZone: 'America/Halifax', hour12: false
+    });
+
+    // Find the closest label index
+    const labels = chart.data.labels;
+    let bestIdx = -1;
+    let bestDiff = Infinity;
+    labels.forEach((lbl, i) => {
+      const [lH, lM] = lbl.split(':').map(Number);
+      const [nH, nM] = nowLabel.split(':').map(Number);
+      const diff = Math.abs((lH * 60 + lM) - (nH * 60 + nM));
+      if (diff < bestDiff) { bestDiff = diff; bestIdx = i; }
+    });
+    if (bestIdx === -1 || bestDiff > 60) return; // skip if no close match
+
+    // Interpolate sub-index position for precision
+    const [nH, nM] = nowLabel.split(':').map(Number);
+    const nowMins = nH * 60 + nM;
+    const [bH, bM] = labels[bestIdx].split(':').map(Number);
+    const bestMins = bH * 60 + bM;
+    let pixelX;
+    if (bestMins === nowMins) {
+      pixelX = xScale.getPixelForValue(bestIdx);
+    } else if (bestMins < nowMins && bestIdx < labels.length - 1) {
+      const [nextH, nextM] = labels[bestIdx + 1].split(':').map(Number);
+      const nextMins = nextH * 60 + nextM;
+      const frac = (nowMins - bestMins) / (nextMins - bestMins);
+      pixelX = xScale.getPixelForValue(bestIdx) + frac * (xScale.getPixelForValue(bestIdx + 1) - xScale.getPixelForValue(bestIdx));
+    } else if (bestMins > nowMins && bestIdx > 0) {
+      const [prevH, prevM] = labels[bestIdx - 1].split(':').map(Number);
+      const prevMins = prevH * 60 + prevM;
+      const frac = (nowMins - prevMins) / (bestMins - prevMins);
+      pixelX = xScale.getPixelForValue(bestIdx - 1) + frac * (xScale.getPixelForValue(bestIdx) - xScale.getPixelForValue(bestIdx - 1));
+    } else {
+      pixelX = xScale.getPixelForValue(bestIdx);
+    }
+
+    const { ctx: c, chartArea: { top, bottom } } = chart;
+    c.save();
+    c.beginPath();
+    c.setLineDash([4, 3]);
+    c.lineWidth = 1.5;
+    c.strokeStyle = CHART_COLORS.red500;
+    c.moveTo(pixelX, top);
+    c.lineTo(pixelX, bottom);
+    c.stroke();
+    c.setLineDash([]);
+
+    // "Now" label
+    c.font = 'bold 10px Inter, sans-serif';
+    c.fillStyle = CHART_COLORS.red500;
+    c.textAlign = 'center';
+    c.fillText('Now', pixelX, top - 4);
+    c.restore();
+  },
+};
+
+// ─── Tide-specific "Now" line plugin (uses raw timestamps) ────────────────────
+const tideNowLinePlugin = {
+  id: 'tideNowLine',
+  afterDraw(chart) {
+    const times = chart.data._rawTimes;
+    const xScale = chart.scales.x;
+    if (!times || !times.length || !xScale) return;
+
+    const now = Date.now();
+    if (now < times[0] || now > times[times.length - 1]) return;
+
+    // Find surrounding data points and interpolate
+    let idx = times.findIndex(t => t >= now);
+    let pixelX;
+    if (idx <= 0) {
+      pixelX = xScale.getPixelForValue(Math.max(0, idx));
+    } else {
+      const prev = times[idx - 1];
+      const next = times[idx];
+      const frac = (now - prev) / (next - prev);
+      pixelX = xScale.getPixelForValue(idx - 1) + frac * (xScale.getPixelForValue(idx) - xScale.getPixelForValue(idx - 1));
+    }
+
+    const { ctx: c, chartArea: { top, bottom } } = chart;
+    c.save();
+    c.beginPath();
+    c.setLineDash([4, 3]);
+    c.lineWidth = 1.5;
+    c.strokeStyle = CHART_COLORS.red500;
+    c.moveTo(pixelX, top);
+    c.lineTo(pixelX, bottom);
+    c.stroke();
+    c.setLineDash([]);
+    c.font = 'bold 10px Inter, sans-serif';
+    c.fillStyle = CHART_COLORS.red500;
+    c.textAlign = 'center';
+    c.fillText('Now', pixelX, top - 4);
+    c.restore();
+  },
+};
+
+// ─── Midnight divider plugin (x-axis label area only) ─────────────────────────
+const midnightDividerPlugin = {
+  id: 'midnightDivider',
+  afterDraw(chart) {
+    const times = _tideRawTimes;
+    const xScale = chart.scales.x;
+    if (!times || !times.length || !xScale) return;
+
+    const { ctx: c, chartArea: { bottom } } = chart;
+    c.save();
+    c.strokeStyle = '#a3a3a3';
+    c.lineWidth = 1;
+
+    times.forEach((t, i) => {
+      const d = new Date(t);
+      if (d.getHours() === 0 && d.getMinutes() === 0 && i > 0) {
+        const px = xScale.getPixelForValue(i);
+        c.beginPath();
+        c.moveTo(px, bottom);
+        c.lineTo(px, bottom + 30);
+        c.stroke();
+      }
+    });
+
+    c.restore();
+  },
+};
 
 // ─── Tide Chart ───────────────────────────────────────────────────────────────
 function renderTideChart(hourlyPredictions, hiLo) {
   destroyChart('tide');
   const ctx = document.getElementById('chart-tide');
   if (!ctx || !hourlyPredictions.length) return;
+
+  // Store raw timestamps for plugins
+  _tideRawTimes = hourlyPredictions.map(p => new Date(p.t).getTime());
 
   const labels = hourlyPredictions.map(p => {
     const d = new Date(p.t);
@@ -89,6 +229,7 @@ function renderTideChart(hourlyPredictions, hiLo) {
 
   CHART_REGISTRY['tide'] = new Chart(ctx, {
     type: 'line',
+    plugins: [midnightDividerPlugin],
     data: {
       labels,
       datasets: [
@@ -148,7 +289,20 @@ function renderTideChart(hourlyPredictions, hiLo) {
       scales: {
         x: {
           ...CHART_DEFAULTS.scales.x,
-          ticks: { ...CHART_DEFAULTS.scales.x.ticks, maxTicksLimit: 12, maxRotation: 0 },
+          ticks: {
+            ...CHART_DEFAULTS.scales.x.ticks,
+            maxTicksLimit: 12,
+            maxRotation: 0,
+            callback: function(value) {
+              if (value >= labels.length || value >= _tideRawTimes.length) return '';
+              var time = labels[value];
+              var d = new Date(_tideRawTimes[value]);
+              if (d.getHours() === 12 && d.getMinutes() === 0) {
+                return [time, d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })];
+              }
+              return time;
+            },
+          },
         },
         y: {
           ...CHART_DEFAULTS.scales.y,
@@ -179,6 +333,7 @@ function renderHourlyChart(hourlyData, unit) {
 
   CHART_REGISTRY['hourly'] = new Chart(ctx, {
     type: 'bar',
+    plugins: [nowLinePlugin],
     data: {
       labels,
       datasets: [
